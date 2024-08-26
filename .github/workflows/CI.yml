@@ -1,6 +1,4 @@
 name: CI
-permissions:
-  contents: write
 on:
   push:
     branches:
@@ -13,9 +11,11 @@ jobs:
   test:
     name: "${{ matrix.platform }} with Java ${{ matrix.java-distribution }} version ${{ matrix.java-version }}"
     strategy:
-      matrix:
+      matrix: # need to add playwright here somewhere
         platform:
           - ubuntu-latest
+          - windows-latest
+          - macos-latest
         java-distribution:
           - adopt-hotspot
           - temurin
@@ -23,28 +23,16 @@ jobs:
         java-version:
           - 8
           - 11
-        include:
-          - platform: windows-latest
-            java-distribution: adopt-hotspot
-            java-version: 11
-          - platform: macos-latest
-            java-distribution: adopt-hotspot
-            java-version: 11
     runs-on: ${{ matrix.platform }}
     timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
       - name: Setup Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v3
         with:
           distribution: ${{ matrix.java-distribution }}
-          java-version: ${{ matrix.java-version }}
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v4
-      - name: Generate and submit dependency graph
-        if: ${{ github.event_name == 'push' }}
-        uses: gradle/actions/dependency-submission@v4
+          java-version: ${{ matrix.java-version }} 
       - name: Build
         run: ./gradlew -i -S build
       - name: Tomcat Install
@@ -63,3 +51,28 @@ jobs:
         run: ./gradlew -i -S hsqlStop
       - name: Generate Skin
         run: ./gradlew -i -S skinGenerate -DskinName=test
+      - name: Run PlayWright
+        run: ./gradlew -i -S playwrightRun
+
+  playwright:
+    timeout-minutes: 15 
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+    - name: Ensure browsers are installed
+      run: python -m playwright install --with-deps
+    - name: Run your tests
+      run: pytest --tracing=retain-on-failure
+    - uses: actions/upload-artifact@v4
+      if: ${{ !cancelled() }}
+      with:
+        name: playwright-traces
+        path: test-results/
